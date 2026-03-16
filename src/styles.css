@@ -324,6 +324,14 @@ h2 {
   line-height: 0.95;
 }
 
+.reveal-player-name {
+  margin: 0 0 10px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2.2rem, 9vw, 3.8rem);
+  line-height: 0.95;
+  text-wrap: balance;
+}
+
 .summary-panel {
   text-align: center;
 }

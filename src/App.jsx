@@ -227,6 +227,7 @@ function App() {
   const [votes, setVotes] = useState([])
   const [showVoteResult, setShowVoteResult] = useState(false)
   const [remainingSeconds, setRemainingSeconds] = useState(roundMinutes * 60)
+  const [startingPlayerId, setStartingPlayerId] = useState(null)
   const startYRef = useRef(null)
   const swipeDistanceRef = useRef(0)
   const revealThreshold = 120
@@ -277,6 +278,7 @@ function App() {
     setVotes([])
     setShowVoteResult(false)
     setRemainingSeconds(roundMinutes * 60)
+    setStartingPlayerId(null)
     swipeDistanceRef.current = 0
     setStage(GAME_STAGES.reveal)
   }
@@ -289,6 +291,7 @@ function App() {
     setVotes([])
     setShowVoteResult(false)
     setRemainingSeconds(roundMinutes * 60)
+    setStartingPlayerId(null)
     swipeDistanceRef.current = 0
     setStage(GAME_STAGES.setup)
   }
@@ -356,6 +359,7 @@ function App() {
     }
 
     if (currentIndex === players.length - 1) {
+      setStartingPlayerId(randomItem(players).id)
       setRemainingSeconds(roundMinutes * 60)
       setStage(GAME_STAGES.timer)
       return
@@ -495,6 +499,7 @@ function App() {
         >
           <div className="reveal-content">
             <p className="card-label">Categoria: {currentPlayer.category}</p>
+            <p className="reveal-player-name">{currentPlayer.name}</p>
             <h2>{currentPlayer.isImpostor ? 'Eres el impostor' : 'Tu palabra es'}</h2>
             {currentPlayer.isImpostor ? (
               <p className="role-copy">No recibes palabra. Mezclate con el grupo y descubre la respuesta.</p>
@@ -512,6 +517,7 @@ function App() {
             <div className="reveal-shine" style={{ transform: `translateY(${100 - progress * 100}%)` }} />
             <>
               <p className="card-label">Categoria: {currentPlayer.category}</p>
+              <p className="reveal-player-name">{currentPlayer.name}</p>
               <h2>Desliza para descubrir tu rol</h2>
               <p className="swipe-copy">Mientras lo arrastras se ve. Al soltar, se tapa otra vez.</p>
               <div className="swipe-meter">
@@ -538,6 +544,7 @@ function App() {
 
   function renderTimer() {
     const progress = remainingSeconds / (roundMinutes * 60)
+    const startingPlayer = players.find((player) => player.id === startingPlayerId) ?? players[0]
 
     return (
       <section className="panel summary-panel">
@@ -556,6 +563,11 @@ function App() {
         <div className="summary-box">
           <span>Categoria elegida</span>
           <strong>{category}</strong>
+        </div>
+
+        <div className="summary-box">
+          <span>Empieza</span>
+          <strong>{startingPlayer?.name}</strong>
         </div>
 
         <button type="button" className="primary-button" onClick={() => setStage(GAME_STAGES.summary)}>
