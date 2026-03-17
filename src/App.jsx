@@ -172,6 +172,8 @@ const GAME_STAGES = {
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
 const ROUND_TIMES = [1, 2, 3, 4, 5]
+const REVEAL_THRESHOLD = 180
+const SWIPE_PROGRESS_CURVE = 1.35
 
 function randomItem(items) {
   return items[Math.floor(Math.random() * items.length)]
@@ -230,7 +232,7 @@ function App() {
   const [startingPlayerId, setStartingPlayerId] = useState(null)
   const startYRef = useRef(null)
   const swipeDistanceRef = useRef(0)
-  const revealThreshold = 120
+  const revealThreshold = REVEAL_THRESHOLD
 
   useEffect(() => {
     setImpostorCount((current) => clamp(current, 1, Math.min(3, playerCount - 1)))
@@ -477,6 +479,7 @@ function App() {
 
   function renderReveal() {
     const progress = Math.min(swipeDistance / revealThreshold, 1)
+    const visualProgress = Math.pow(progress, SWIPE_PROGRESS_CURVE)
     const statusLabel = hasSeenRole
       ? 'Rol visto, ya puedes continuar'
       : isDragging
@@ -511,21 +514,21 @@ function App() {
           <div
             className="reveal-cover"
             style={{
-              transform: `translateY(${-progress * 100}%)`,
+              transform: `translateY(${-visualProgress * 100}%)`,
             }}
           >
-            <div className="reveal-shine" style={{ transform: `translateY(${100 - progress * 100}%)` }} />
+            <div className="reveal-shine" style={{ transform: `translateY(${100 - visualProgress * 100}%)` }} />
             <>
               <p className="card-label">Categoria: {currentPlayer.category}</p>
               <p className="reveal-player-name">{currentPlayer.name}</p>
               <h2>Desliza para descubrir tu rol</h2>
               <p className="swipe-copy">Mientras lo arrastras se ve. Al soltar, se tapa otra vez.</p>
               <div className="swipe-meter">
-                <div className="swipe-meter-fill" style={{ height: `${progress * 100}%` }} />
+                <div className="swipe-meter-fill" style={{ height: `${visualProgress * 100}%` }} />
               </div>
               <div className="swipe-hint">
                 <span>{statusLabel}</span>
-                <strong>{Math.round(progress * 100)}%</strong>
+                <strong>{Math.round(visualProgress * 100)}%</strong>
               </div>
             </>
           </div>
