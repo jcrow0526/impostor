@@ -1,0 +1,17 @@
+{
+  "name": "El Impostor",
+  "short_name": "Impostor",
+  "description": "El Impostor",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111111",
+  "theme_color": "#111111",
+  "icons": [
+    {
+      "src": "/logoimpostor.png",
+      "sizes": "491x508",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
