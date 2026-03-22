@@ -536,7 +536,7 @@ function App() {
   function renderSetup() {
     return (
       <section className="panel setup-panel">
-        <h1>El Impostor</h1>
+        <img className="hero-logo" src="/logoimpostor.png" alt="Logo de El Impostor" />
         <p className="intro">
           Configura la ronda, pasa el telefono y haz que cada jugador deslice hacia arriba para ver si
           recibe la palabra o le toca ser impostor.
