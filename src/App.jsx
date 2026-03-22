@@ -469,7 +469,7 @@ function App() {
       }
 
       if (current.length >= impostorCount) {
-        return current
+        return [...current.slice(1), playerId]
       }
 
       return [...current, playerId]
@@ -758,7 +758,6 @@ function App() {
               type="button"
               className={votes.includes(player.id) ? 'vote-card selected' : 'vote-card'}
               onClick={() => toggleVote(player.id)}
-              disabled={!votes.includes(player.id) && votes.length >= impostorCount}
             >
               <span>Jugador</span>
               <strong>{player.name}</strong>
