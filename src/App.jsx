@@ -486,9 +486,26 @@ function isRoomExpired(room, now = Date.now()) {
   return Boolean(room?.expiresAt) && room.expiresAt <= now
 }
 
+function getRoomCodeFromUrl() {
+  return new URLSearchParams(window.location.search).get('room')?.trim().toUpperCase() || ''
+}
+
+function setInviteRoomInUrl(roomCode) {
+  const nextUrl = new URL(window.location.href)
+
+  if (roomCode) {
+    nextUrl.searchParams.set('room', roomCode)
+  } else {
+    nextUrl.searchParams.delete('room')
+  }
+
+  window.history.replaceState({}, '', nextUrl)
+}
+
 function App() {
   const categories = useMemo(() => Object.keys(CATEGORY_WORDS), [])
   const [playMode, setPlayMode] = useState(PLAY_MODES.local)
+  const inviteRoomCode = getRoomCodeFromUrl()
 
   const [playerCount, setPlayerCount] = useState(6)
   const [impostorCount, setImpostorCount] = useState(1)
@@ -512,9 +529,10 @@ function App() {
   const [onlineRoomCode, setOnlineRoomCode] = useState(
     () => window.localStorage.getItem(LOCAL_STORAGE_KEYS.roomCode) || '',
   )
-  const [joinRoomCode, setJoinRoomCode] = useState('')
+  const [joinRoomCode, setJoinRoomCode] = useState(inviteRoomCode)
   const [onlineRoom, setOnlineRoom] = useState(null)
   const [onlineError, setOnlineError] = useState('')
+  const [onlineInfo, setOnlineInfo] = useState('')
   const [onlineLoading, setOnlineLoading] = useState(false)
   const [onlineVotes, setOnlineVotes] = useState([])
   const [onlineNow, setOnlineNow] = useState(Date.now())
@@ -526,6 +544,13 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(LOCAL_STORAGE_KEYS.playerId, playerIdRef.current)
   }, [])
+
+  useEffect(() => {
+    if (inviteRoomCode) {
+      setPlayMode(PLAY_MODES.online)
+      setJoinRoomCode(inviteRoomCode)
+    }
+  }, [inviteRoomCode])
 
   useEffect(() => {
     setImpostorCount((current) => clamp(current, 1, Math.min(3, playerCount - 1)))
@@ -598,6 +623,7 @@ function App() {
     }
 
     window.localStorage.setItem(LOCAL_STORAGE_KEYS.roomCode, onlineRoomCode)
+    setInviteRoomInUrl(onlineRoomCode)
   }, [onlineRoomCode])
 
   useEffect(() => {
@@ -854,6 +880,7 @@ function App() {
 
       setOnlineRoomCode(roomCode)
       setJoinRoomCode(roomCode)
+      setOnlineInfo('')
     } catch (error) {
       setOnlineError('No se pudo crear la sala.')
     } finally {
@@ -861,13 +888,13 @@ function App() {
     }
   }
 
-  async function joinOnlineRoom() {
+  async function joinOnlineRoom(roomCodeOverride = joinRoomCode) {
     if (!firebaseEnabled) {
       setOnlineError('Falta configurar Firebase para habilitar las salas online.')
       return
     }
 
-    const roomCode = joinRoomCode.trim().toUpperCase()
+    const roomCode = roomCodeOverride.trim().toUpperCase()
     const trimmedName = onlineName.trim() || 'Jugador'
 
     if (!roomCode) {
@@ -910,6 +937,7 @@ function App() {
       })
 
       setOnlineRoomCode(roomCode)
+      setOnlineInfo('')
     } catch (error) {
       setOnlineError('No se pudo entrar a la sala.')
     } finally {
@@ -948,6 +976,8 @@ function App() {
     setOnlineRoom(null)
     setJoinRoomCode('')
     setOnlineVotes([])
+    setOnlineInfo('')
+    setInviteRoomInUrl('')
   }
 
   async function updateOnlineConfig(nextConfig) {
@@ -1101,6 +1131,33 @@ function App() {
     }
   }
 
+  async function shareInviteLink() {
+    if (!onlineRoomCode) {
+      return
+    }
+
+    const inviteUrl = new URL(window.location.origin)
+    inviteUrl.searchParams.set('room', onlineRoomCode)
+    const shareData = {
+      title: 'Invitacion a sala de Impostor',
+      text: `Entra a mi sala ${onlineRoomCode} y pon tu nombre para jugar.`,
+      url: inviteUrl.toString(),
+    }
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData)
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(inviteUrl.toString())
+      }
+
+      setOnlineInfo('Link de invitacion listo para compartir.')
+      setOnlineError('')
+    } catch (error) {
+      setOnlineError('No se pudo compartir el link de invitacion.')
+    }
+  }
+
   async function cleanupExpiredRooms() {
     if (!firebaseEnabled) {
       return
@@ -1251,14 +1308,16 @@ function App() {
 
   function renderOnlineSetup() {
     const isInsideRoom = Boolean(onlineRoomCode)
+    const isInviteFlow = Boolean(joinRoomCode) && !isInsideRoom
 
     return (
       <>
         {!isInsideRoom && (
           <>
             <p className="intro">
-              Crea una sala, comparte el codigo y jueguen cada uno desde su celular o laptop mientras hablan
-              por videollamada. La app solo sincroniza roles, ronda y turnos.
+              {isInviteFlow
+                ? `Te invitaron a la sala ${joinRoomCode}. Solo pon tu nombre para entrar.`
+                : 'Crea una sala, comparte el codigo y jueguen cada uno desde su celular o laptop mientras hablan por videollamada. La app solo sincroniza roles, ronda y turnos.'}
             </p>
 
             <div className="field">
@@ -1286,33 +1345,47 @@ function App() {
 
         {!onlineRoomCode ? (
           <>
-            <button type="button" className="primary-button" onClick={createOnlineRoom} disabled={onlineLoading}>
-              Crear sala
-            </button>
-
-            <div className="join-row">
-              <input
-                className="name-input"
-                type="text"
-                value={joinRoomCode}
-                maxLength={6}
-                onChange={(event) => setJoinRoomCode(event.target.value.toUpperCase())}
-                placeholder="Codigo"
-              />
+            {isInviteFlow ? (
               <button
                 type="button"
-                className="ghost-button inline-button"
-                onClick={joinOnlineRoom}
+                className="primary-button"
+                onClick={() => joinOnlineRoom(joinRoomCode)}
                 disabled={onlineLoading}
               >
-                Entrar
+                Entrar con invitacion
               </button>
-            </div>
+            ) : (
+              <>
+                <button type="button" className="primary-button" onClick={createOnlineRoom} disabled={onlineLoading}>
+                  Crear sala
+                </button>
+
+                <div className="join-row">
+                  <input
+                    className="name-input"
+                    type="text"
+                    value={joinRoomCode}
+                    maxLength={6}
+                    onChange={(event) => setJoinRoomCode(event.target.value.toUpperCase())}
+                    placeholder="Codigo"
+                  />
+                  <button
+                    type="button"
+                    className="ghost-button inline-button"
+                    onClick={() => joinOnlineRoom(joinRoomCode)}
+                    disabled={onlineLoading}
+                  >
+                    Entrar
+                  </button>
+                </div>
+              </>
+            )}
           </>
         ) : (
           renderOnlineRoom()
         )}
 
+        {onlineInfo && <div className="notice-box">{onlineInfo}</div>}
         {onlineError && <div className="notice-box error-box">{onlineError}</div>}
       </>
     )
@@ -1495,6 +1568,10 @@ function App() {
           <span>Codigo de invitacion</span>
           <strong>{onlineRoomCode}</strong>
         </div>
+
+        <button type="button" className="ghost-button" onClick={shareInviteLink}>
+          Compartir link de invitacion
+        </button>
 
         {status === ONLINE_STAGES.lobby && renderOnlineLobby()}
         {status === ONLINE_STAGES.play && renderOnlinePlay()}
