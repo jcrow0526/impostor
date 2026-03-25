@@ -553,6 +553,14 @@ function App() {
   }, [inviteRoomCode])
 
   useEffect(() => {
+    if (!inviteRoomCode || !onlineRoomCode || inviteRoomCode === onlineRoomCode) {
+      return
+    }
+
+    cleanupPlayerSession(onlineRoomCode, { clearUrl: false, nextJoinCode: inviteRoomCode }).catch(() => {})
+  }, [inviteRoomCode, onlineRoomCode])
+
+  useEffect(() => {
     setImpostorCount((current) => clamp(current, 1, Math.min(3, playerCount - 1)))
   }, [playerCount])
 
@@ -906,6 +914,10 @@ function App() {
     setOnlineError('')
 
     try {
+      if (onlineRoomCode && onlineRoomCode !== roomCode) {
+        await cleanupPlayerSession(onlineRoomCode, { clearUrl: false, nextJoinCode: roomCode })
+      }
+
       await cleanupExpiredRooms()
       const snapshot = await readRoomSnapshot(roomCode)
 
@@ -945,6 +957,49 @@ function App() {
     }
   }
 
+  async function cleanupPlayerSession(roomCodeToLeave, options = {}) {
+    const { clearUrl = true, nextJoinCode = '' } = options
+
+    if (!roomCodeToLeave || !firebaseEnabled) {
+      setOnlineRoomCode('')
+      setOnlineRoom(null)
+      if (nextJoinCode !== undefined) {
+        setJoinRoomCode(nextJoinCode)
+      }
+      return
+    }
+
+    try {
+      await remove(getRoomPlayerRef(roomCodeToLeave, playerIdRef.current))
+      const roomSnapshot = await readRoomSnapshot(roomCodeToLeave)
+
+      if (roomSnapshot.exists()) {
+        const room = roomSnapshot.val()
+        const remainingPlayers = normalizePlayers(room.players)
+
+        if (remainingPlayers.length === 0) {
+          await remove(getRoomRef(roomCodeToLeave))
+        } else {
+          await update(getRoomRef(roomCodeToLeave), {
+            ...createRoomMeta(room.status ?? ONLINE_STAGES.lobby),
+          })
+        }
+      }
+    } catch (error) {
+      // Ignore room cleanup errors on room switch.
+    }
+
+    setOnlineRoomCode('')
+    setOnlineRoom(null)
+    setJoinRoomCode(nextJoinCode)
+    setOnlineVotes([])
+    setOnlineInfo('')
+
+    if (clearUrl) {
+      setInviteRoomInUrl('')
+    }
+  }
+
   async function leaveOnlineRoom() {
     if (!onlineRoomCode || !firebaseEnabled) {
       setOnlineRoomCode('')
@@ -952,32 +1007,7 @@ function App() {
       return
     }
 
-    try {
-      await remove(getRoomPlayerRef(onlineRoomCode, playerIdRef.current))
-      const roomSnapshot = await readRoomSnapshot(onlineRoomCode)
-
-      if (roomSnapshot.exists()) {
-        const room = roomSnapshot.val()
-        const remainingPlayers = normalizePlayers(room.players)
-
-        if (remainingPlayers.length === 0) {
-          await remove(getRoomRef(onlineRoomCode))
-        } else {
-          await update(getRoomRef(onlineRoomCode), {
-            ...createRoomMeta(room.status ?? ONLINE_STAGES.lobby),
-          })
-        }
-      }
-    } catch (error) {
-      // Ignore room cleanup errors on leave.
-    }
-
-    setOnlineRoomCode('')
-    setOnlineRoom(null)
-    setJoinRoomCode('')
-    setOnlineVotes([])
-    setOnlineInfo('')
-    setInviteRoomInUrl('')
+    await cleanupPlayerSession(onlineRoomCode, { clearUrl: true, nextJoinCode: '' })
   }
 
   async function updateOnlineConfig(nextConfig) {
