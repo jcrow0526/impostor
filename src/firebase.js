@@ -24,6 +24,10 @@ export const firebaseEnabled = Object.values(firebaseConfig).every(Boolean)
 const app = firebaseEnabled ? getApps()[0] ?? initializeApp(firebaseConfig) : null
 const database = app ? getDatabase(app) : null
 
+export function getRoomsRef() {
+  return ref(database, 'rooms')
+}
+
 export function getRoomRef(roomCode) {
   return ref(database, `rooms/${roomCode}`)
 }
@@ -34,6 +38,10 @@ export function getRoomPlayerRef(roomCode, playerId) {
 
 export function readRoomSnapshot(roomCode) {
   return get(getRoomRef(roomCode))
+}
+
+export function readRoomsSnapshot() {
+  return get(getRoomsRef())
 }
 
 export { onValue, remove, set, update }

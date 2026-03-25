@@ -5,6 +5,7 @@ import {
   getRoomPlayerRef,
   onValue,
   readRoomSnapshot,
+  readRoomsSnapshot,
   remove,
   set,
   update,
@@ -353,6 +354,11 @@ const LOCAL_STORAGE_KEYS = {
 }
 
 const ROUND_TIMES = [1, 2, 3, 4, 5]
+const ROOM_TTLS = {
+  lobby: 30 * 60 * 1000,
+  play: 2 * 60 * 60 * 1000,
+  summary: 30 * 60 * 1000,
+}
 const PLAY_MODES = {
   local: 'local',
   online: 'online',
@@ -448,6 +454,21 @@ function canRevealOnlineResult(room) {
   return Boolean(room?.game?.votesByPlayer) && Object.keys(room.game.votesByPlayer).length > 0
 }
 
+function getRoomExpiry(status, now = Date.now()) {
+  return now + (ROOM_TTLS[status] ?? ROOM_TTLS.lobby)
+}
+
+function createRoomMeta(status, now = Date.now()) {
+  return {
+    lastActivityAt: now,
+    expiresAt: getRoomExpiry(status, now),
+  }
+}
+
+function isRoomExpired(room, now = Date.now()) {
+  return Boolean(room?.expiresAt) && room.expiresAt <= now
+}
+
 function App() {
   const categories = useMemo(() => Object.keys(CATEGORY_WORDS), [])
   const [playMode, setPlayMode] = useState(PLAY_MODES.local)
@@ -535,6 +556,14 @@ function App() {
       if (!roomValue) {
         setOnlineRoom(null)
         setOnlineError('La sala ya no existe.')
+        return
+      }
+
+      if (isRoomExpired(roomValue)) {
+        remove(getRoomRef(onlineRoomCode)).catch(() => {})
+        setOnlineRoom(null)
+        setOnlineRoomCode('')
+        setOnlineError('La sala expiro.')
         return
       }
 
@@ -745,15 +774,18 @@ function App() {
 
     const trimmedName = onlineName.trim() || 'Anfitrion'
     const roomCode = createRoomCode()
+    const now = Date.now()
 
     setOnlineLoading(true)
     setOnlineError('')
 
     try {
+      await cleanupExpiredRooms()
       await set(getRoomRef(roomCode), {
         hostId: playerIdRef.current,
         status: ONLINE_STAGES.lobby,
-        createdAt: Date.now(),
+        createdAt: now,
+        ...createRoomMeta(ONLINE_STAGES.lobby, now),
         config: {
           category,
           impostorCount,
@@ -763,7 +795,7 @@ function App() {
           [playerIdRef.current]: {
             id: playerIdRef.current,
             name: trimmedName,
-            joinedAt: Date.now(),
+            joinedAt: now,
           },
         },
         game: null,
@@ -796,6 +828,7 @@ function App() {
     setOnlineError('')
 
     try {
+      await cleanupExpiredRooms()
       const snapshot = await readRoomSnapshot(roomCode)
 
       if (!snapshot.exists()) {
@@ -805,12 +838,19 @@ function App() {
 
       const room = snapshot.val()
 
+      if (isRoomExpired(room)) {
+        await remove(getRoomRef(roomCode))
+        setOnlineError('La sala expiro.')
+        return
+      }
+
       if (room.status !== ONLINE_STAGES.lobby) {
         setOnlineError('La partida ya empezo. Entra antes de iniciar.')
         return
       }
 
       await update(getRoomRef(roomCode), {
+        ...createRoomMeta(ONLINE_STAGES.lobby),
         [`players/${playerIdRef.current}`]: {
           id: playerIdRef.current,
           name: trimmedName,
@@ -835,6 +875,20 @@ function App() {
 
     try {
       await remove(getRoomPlayerRef(onlineRoomCode, playerIdRef.current))
+      const roomSnapshot = await readRoomSnapshot(onlineRoomCode)
+
+      if (roomSnapshot.exists()) {
+        const room = roomSnapshot.val()
+        const remainingPlayers = normalizePlayers(room.players)
+
+        if (remainingPlayers.length === 0) {
+          await remove(getRoomRef(onlineRoomCode))
+        } else {
+          await update(getRoomRef(onlineRoomCode), {
+            ...createRoomMeta(room.status ?? ONLINE_STAGES.lobby),
+          })
+        }
+      }
     } catch (error) {
       // Ignore room cleanup errors on leave.
     }
@@ -852,6 +906,7 @@ function App() {
 
     try {
       await update(getRoomRef(onlineRoomCode), {
+        ...createRoomMeta(ONLINE_STAGES.lobby),
         config: {
           ...onlineConfig,
           ...nextConfig,
@@ -870,14 +925,16 @@ function App() {
     const cappedImpostors = clamp(onlineConfig.impostorCount, 1, Math.min(3, onlinePlayers.length - 1))
     const nextConfig = { ...onlineConfig, impostorCount: cappedImpostors }
     const round = buildOnlineRound(onlinePlayers, nextConfig)
+    const now = Date.now()
 
     try {
       await update(getRoomRef(onlineRoomCode), {
         status: ONLINE_STAGES.play,
+        ...createRoomMeta(ONLINE_STAGES.play, now),
         config: nextConfig,
         game: {
           ...round.game,
-          endsAt: Date.now() + nextConfig.roundMinutes * 60 * 1000,
+          endsAt: now + nextConfig.roundMinutes * 60 * 1000,
         },
         ...round.playerUpdates,
       })
@@ -899,6 +956,7 @@ function App() {
 
     try {
       await update(getRoomRef(onlineRoomCode), {
+        ...createRoomMeta(ONLINE_STAGES.play),
         'game/turnIndex':
           ((onlineRoom?.game?.turnIndex ?? 0) + 1) % (onlineRoom?.game?.revealOrder?.length ?? 1),
       })
@@ -913,7 +971,10 @@ function App() {
     }
 
     try {
-      await update(getRoomRef(onlineRoomCode), { status: ONLINE_STAGES.summary })
+      await update(getRoomRef(onlineRoomCode), {
+        status: ONLINE_STAGES.summary,
+        ...createRoomMeta(ONLINE_STAGES.summary),
+      })
     } catch (error) {
       setOnlineError('No se pudo cerrar la ronda.')
     }
@@ -924,7 +985,11 @@ function App() {
       return
     }
 
-    const resetUpdates = { status: ONLINE_STAGES.lobby, game: null }
+    const resetUpdates = {
+      status: ONLINE_STAGES.lobby,
+      game: null,
+      ...createRoomMeta(ONLINE_STAGES.lobby),
+    }
 
     onlinePlayers.forEach((player) => {
       resetUpdates[`players/${player.id}/isImpostor`] = null
@@ -946,6 +1011,7 @@ function App() {
 
     try {
       await update(getRoomRef(onlineRoomCode), {
+        ...createRoomMeta(ONLINE_STAGES.summary),
         [`game/votesByPlayer/${playerIdRef.current}`]: nextVotes,
       })
     } catch (error) {
@@ -975,9 +1041,41 @@ function App() {
     }
 
     try {
-      await update(getRoomRef(onlineRoomCode), { 'game/resultRevealed': true })
+      await update(getRoomRef(onlineRoomCode), {
+        ...createRoomMeta(ONLINE_STAGES.summary),
+        'game/resultRevealed': true,
+      })
     } catch (error) {
       setOnlineError('No se pudo mostrar el resultado.')
+    }
+  }
+
+  async function cleanupExpiredRooms() {
+    if (!firebaseEnabled) {
+      return
+    }
+
+    try {
+      const snapshot = await readRoomsSnapshot()
+
+      if (!snapshot.exists()) {
+        return
+      }
+
+      const rooms = snapshot.val() ?? {}
+      const now = Date.now()
+
+      await Promise.all(
+        Object.entries(rooms).map(async ([code, room]) => {
+          const hasPlayers = normalizePlayers(room.players).length > 0
+
+          if (!hasPlayers || isRoomExpired(room, now)) {
+            await remove(getRoomRef(code))
+          }
+        }),
+      )
+    } catch (error) {
+      // Cleanup is best-effort only.
     }
   }
 
@@ -1342,6 +1440,11 @@ function App() {
 
     return (
       <section className="online-room">
+        <div className="summary-box room-code-box">
+          <span>Codigo de invitacion</span>
+          <strong>{onlineRoomCode}</strong>
+        </div>
+
         {status === ONLINE_STAGES.lobby && renderOnlineLobby()}
         {status === ONLINE_STAGES.play && renderOnlinePlay()}
         {status === ONLINE_STAGES.summary && renderOnlineSummary()}
