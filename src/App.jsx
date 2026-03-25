@@ -433,6 +433,7 @@ function buildOnlineRound(players, config) {
       startedAt: Date.now(),
       endsAt: null,
       resultRevealed: false,
+      voteReadyBy: {},
       votesByPlayer: {},
     },
   }
@@ -452,6 +453,22 @@ function normalizePlayers(playersMap) {
 
 function canRevealOnlineResult(room) {
   return Boolean(room?.game?.votesByPlayer) && Object.keys(room.game.votesByPlayer).length > 0
+}
+
+function buildVoteTotals(votesByPlayer) {
+  const totals = {}
+
+  Object.values(votesByPlayer ?? {}).forEach((votes) => {
+    if (!Array.isArray(votes)) {
+      return
+    }
+
+    votes.forEach((playerId) => {
+      totals[playerId] = (totals[playerId] ?? 0) + 1
+    })
+  })
+
+  return totals
 }
 
 function getRoomExpiry(status, now = Date.now()) {
@@ -659,6 +676,40 @@ function App() {
     ((onlineRoom?.game?.endsAt ?? onlineNow) - onlineNow) / 1000,
   )
   const onlineImpostors = onlinePlayers.filter((player) => player.isImpostor)
+  const onlineVoteReadyCount = Object.keys(onlineRoom?.game?.voteReadyBy ?? {}).length
+  const onlineVoteThreshold = Math.floor(onlinePlayers.length / 2) + 1
+  const iAmReadyForVote = Boolean(onlineRoom?.game?.voteReadyBy?.[playerIdRef.current])
+  const onlineVoteTotals = buildVoteTotals(onlineRoom?.game?.votesByPlayer)
+  const onlineMajorityThreshold = Math.floor(onlinePlayers.length / 2) + 1
+  const autoSelectedPlayerIds = onlinePlayers
+    .filter((player) => (onlineVoteTotals[player.id] ?? 0) >= onlineMajorityThreshold)
+    .map((player) => player.id)
+
+  useEffect(() => {
+    if (
+      onlineRoom?.status === ONLINE_STAGES.play &&
+      onlineVoteReadyCount >= onlineVoteThreshold &&
+      onlineVoteThreshold > 0
+    ) {
+      update(getRoomRef(onlineRoomCode), {
+        status: ONLINE_STAGES.summary,
+        ...createRoomMeta(ONLINE_STAGES.summary),
+      }).catch(() => {})
+    }
+  }, [onlineRoom?.status, onlineRoomCode, onlineVoteReadyCount, onlineVoteThreshold])
+
+  useEffect(() => {
+    if (
+      onlineRoom?.status === ONLINE_STAGES.summary &&
+      autoSelectedPlayerIds.length > 0 &&
+      !onlineRoom?.game?.resultRevealed
+    ) {
+      update(getRoomRef(onlineRoomCode), {
+        ...createRoomMeta(ONLINE_STAGES.summary),
+        'game/resultRevealed': true,
+      }).catch(() => {})
+    }
+  }, [autoSelectedPlayerIds.length, onlineRoom?.game?.resultRevealed, onlineRoom?.status, onlineRoomCode])
 
   function startGame() {
     const nextPlayers = createLocalGame({ playerCount, impostorCount, category }).map((player, index) => ({
@@ -965,18 +1016,18 @@ function App() {
     }
   }
 
-  async function finishOnlineRound() {
-    if (!isOnlineHost || !onlineRoomCode) {
+  async function toggleVoteReady() {
+    if (!onlineRoomCode || onlineRoom?.status !== ONLINE_STAGES.play) {
       return
     }
 
     try {
       await update(getRoomRef(onlineRoomCode), {
-        status: ONLINE_STAGES.summary,
-        ...createRoomMeta(ONLINE_STAGES.summary),
+        ...createRoomMeta(ONLINE_STAGES.play),
+        [`game/voteReadyBy/${playerIdRef.current}`]: iAmReadyForVote ? null : true,
       })
     } catch (error) {
-      setOnlineError('No se pudo cerrar la ronda.')
+      setOnlineError('No se pudo actualizar tu voto para ir a votacion.')
     }
   }
 
@@ -1602,15 +1653,20 @@ function App() {
           ))}
         </div>
 
+        <div className="summary-box">
+          <span>Listos para votar</span>
+          <strong>
+            {onlineVoteReadyCount}/{onlineVoteThreshold}
+          </strong>
+        </div>
+
         <button type="button" className="primary-button" onClick={advanceOnlineTurn} disabled={!canAdvanceTurn}>
           Siguiente turno
         </button>
 
-        {isOnlineHost && (
-          <button type="button" className="ghost-button" onClick={finishOnlineRound}>
-            Cerrar ronda e ir a votacion
-          </button>
-        )}
+        <button type="button" className="ghost-button" onClick={toggleVoteReady}>
+          {iAmReadyForVote ? 'Ya no quiero votar' : 'Quiero ir a votacion'}
+        </button>
       </>
     )
   }
@@ -1619,13 +1675,14 @@ function App() {
     const guessedAll =
       onlineVotes.length === onlineImpostors.length &&
       onlineImpostors.every((player) => onlineVotes.includes(player.id))
+    const hasMajoritySelection = autoSelectedPlayerIds.length > 0
 
     return (
       <>
         <div className="eyebrow">Votacion sincronizada</div>
         <h2>Marquen a los sospechosos</h2>
         <p className="intro">
-          Cada jugador puede votar desde su pantalla. El anfitrion muestra el resultado cuando quieran.
+          Cada tarjeta muestra cuantas personas votaron por ese jugador. Si alguien llega a mayoria, queda marcado.
         </p>
 
         <div className="vote-list">
@@ -1633,10 +1690,15 @@ function App() {
             <button
               key={player.id}
               type="button"
-              className={onlineVotes.includes(player.id) ? 'vote-card selected' : 'vote-card'}
+              className={
+                onlineVotes.includes(player.id) || autoSelectedPlayerIds.includes(player.id)
+                  ? 'vote-card selected'
+                  : 'vote-card'
+              }
               onClick={() => toggleOnlineVote(player.id)}
+              disabled={hasMajoritySelection}
             >
-              <span>Jugador</span>
+              <span>{onlineVoteTotals[player.id] ?? 0} votos</span>
               <strong>{player.name}</strong>
             </button>
           ))}
@@ -1649,6 +1711,23 @@ function App() {
           </strong>
         </div>
 
+        <div className="summary-box">
+          <span>Mayoria necesaria</span>
+          <strong>{onlineMajorityThreshold}</strong>
+        </div>
+
+        {hasMajoritySelection && (
+          <div className="result-box">
+            <span>Seleccionado por mayoria</span>
+            <strong>
+              {onlinePlayers
+                .filter((player) => autoSelectedPlayerIds.includes(player.id))
+                .map((player) => player.name)
+                .join(', ')}
+            </strong>
+          </div>
+        )}
+
         {onlineRoom?.game?.resultRevealed && (
           <div className="result-box">
             <span>{guessedAll ? 'Tu voto acerto' : 'Tu voto no encontro a todos'}</span>
@@ -1656,7 +1735,7 @@ function App() {
           </div>
         )}
 
-        {isOnlineHost && !onlineRoom?.game?.resultRevealed && (
+        {isOnlineHost && !onlineRoom?.game?.resultRevealed && !hasMajoritySelection && (
           <button
             type="button"
             className="primary-button"
