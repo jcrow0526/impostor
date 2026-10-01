@@ -511,6 +511,47 @@ function setInviteRoomInUrl(roomCode) {
   window.history.replaceState({}, '', nextUrl)
 }
 
+const CONFETTI_COLORS = ['#df6f2f', '#1f5c4f', '#f8ca78', '#3fb68b', '#fffdf8']
+const CONFETTI_PIECES = Array.from({ length: 28 }, (_, index) => ({
+  x: Math.round(Math.cos(index * 2.4) * (60 + (index % 5) * 30)),
+  y: Math.round(-90 - (index % 7) * 22),
+  rotation: (index * 47) % 360,
+  delay: (index % 6) * 30,
+  color: CONFETTI_COLORS[index % CONFETTI_COLORS.length],
+}))
+
+function VoteResult({ caught, impostorNames }) {
+  const label = impostorNames.length === 1 ? 'El impostor era' : 'Los impostores eran'
+
+  return (
+    <div className={caught ? 'vote-result caught' : 'vote-result escaped'} role="status">
+      {caught && (
+        <div className="confetti" aria-hidden="true">
+          {CONFETTI_PIECES.map((piece, index) => (
+            <span
+              key={index}
+              style={{
+                '--x': `${piece.x}px`,
+                '--y': `${piece.y}px`,
+                '--r': `${piece.rotation}deg`,
+                '--d': `${piece.delay}ms`,
+                background: piece.color,
+              }}
+            />
+          ))}
+        </div>
+      )}
+      <div className="vote-result-icon" aria-hidden="true">
+        {caught ? '✓' : '✕'}
+      </div>
+      <h3>{caught ? '¡Correcto! Atraparon al impostor' : '¡Ganó el impostor!'}</h3>
+      <p>
+        {label} <strong>{impostorNames.join(', ') || 'nadie'}</strong>
+      </p>
+    </div>
+  )
+}
+
 function App() {
   const categories = useMemo(() => Object.keys(CATEGORY_WORDS), [])
   const [playMode, setPlayMode] = useState(PLAY_MODES.local)
@@ -1580,8 +1621,15 @@ function App() {
               key={player.id}
               type="button"
               style={{ '--i': index }}
-              className={votes.includes(player.id) ? 'vote-card selected' : 'vote-card'}
+              className={[
+                'vote-card',
+                votes.includes(player.id) && 'selected',
+                showVoteResult && player.isImpostor && 'impostor',
+              ]
+                .filter(Boolean)
+                .join(' ')}
               onClick={() => toggleVote(player.id)}
+              disabled={showVoteResult}
             >
               <span>Jugador</span>
               <strong>{player.name}</strong>
@@ -1606,10 +1654,7 @@ function App() {
             Confirmar votacion
           </button>
         ) : (
-          <div className="result-box">
-            <span>{guessedAll ? 'Acierto total' : 'No acertaron todos'}</span>
-            <strong>{impostors.map((player) => player.name).join(', ')}</strong>
-          </div>
+          <VoteResult caught={guessedAll} impostorNames={impostors.map((player) => player.name)} />
         )}
 
         <button type="button" className="ghost-button" onClick={resetGame}>
@@ -1823,10 +1868,10 @@ function App() {
   }
 
   function renderOnlineSummary() {
-    const guessedAll =
-      onlineVotes.length === onlineImpostors.length &&
-      onlineImpostors.every((player) => onlineVotes.includes(player.id))
     const hasMajoritySelection = autoSelectedPlayerIds.length > 0
+    const pickedIds = hasMajoritySelection ? autoSelectedPlayerIds : onlineVotes
+    const guessedAll =
+      onlineImpostors.length > 0 && onlineImpostors.every((player) => pickedIds.includes(player.id))
 
     return (
       <>
@@ -1842,11 +1887,13 @@ function App() {
               key={player.id}
               type="button"
               style={{ '--i': index }}
-              className={
-                onlineVotes.includes(player.id) || autoSelectedPlayerIds.includes(player.id)
-                  ? 'vote-card selected'
-                  : 'vote-card'
-              }
+              className={[
+                'vote-card',
+                (onlineVotes.includes(player.id) || autoSelectedPlayerIds.includes(player.id)) && 'selected',
+                onlineRoom?.game?.resultRevealed && player.isImpostor && 'impostor',
+              ]
+                .filter(Boolean)
+                .join(' ')}
               onClick={() => toggleOnlineVote(player.id)}
               disabled={hasMajoritySelection}
             >
@@ -1881,10 +1928,7 @@ function App() {
         )}
 
         {onlineRoom?.game?.resultRevealed && (
-          <div className="result-box">
-            <span>{guessedAll ? 'Tu voto acerto' : 'Tu voto no encontro a todos'}</span>
-            <strong>{onlineImpostors.map((player) => player.name).join(', ') || 'Sin impostores'}</strong>
-          </div>
+          <VoteResult caught={guessedAll} impostorNames={onlineImpostors.map((player) => player.name)} />
         )}
 
         {isOnlineHost && !onlineRoom?.game?.resultRevealed && !hasMajoritySelection && (
