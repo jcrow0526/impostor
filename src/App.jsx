@@ -363,6 +363,8 @@ const PLAY_MODES = {
   local: 'local',
   online: 'online',
 }
+const RANDOM_CATEGORY = 'random'
+const URGENT_SECONDS = 10
 const REVEAL_THRESHOLD = 180
 const SWIPE_PROGRESS_CURVE = 1.35
 
@@ -370,6 +372,12 @@ const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
 
 function randomItem(items) {
   return items[Math.floor(Math.random() * items.length)]
+}
+
+function resolveCategory(category) {
+  return category === RANDOM_CATEGORY || !CATEGORY_WORDS[category]
+    ? randomItem(Object.keys(CATEGORY_WORDS))
+    : category
 }
 
 function createId() {
@@ -409,7 +417,8 @@ function createLocalGame({ playerCount, impostorCount, category }) {
 
 function buildOnlineRound(players, config) {
   const playerList = [...players].sort((a, b) => (a.joinedAt ?? 0) - (b.joinedAt ?? 0))
-  const word = randomItem(CATEGORY_WORDS[config.category])
+  const category = resolveCategory(config.category)
+  const word = randomItem(CATEGORY_WORDS[category])
   const impostorIndexes = pickImpostorIndexes(playerList.length, config.impostorCount)
   const revealOrder = playerList.map((player) => player.id)
   const playerUpdates = {}
@@ -419,13 +428,13 @@ function buildOnlineRound(players, config) {
 
     playerUpdates[`players/${player.id}/isImpostor`] = isImpostor
     playerUpdates[`players/${player.id}/secretWord`] = isImpostor ? '' : word
-    playerUpdates[`players/${player.id}/roundCategory`] = config.category
+    playerUpdates[`players/${player.id}/roundCategory`] = category
   })
 
   return {
     playerUpdates,
     game: {
-      category: config.category,
+      category,
       word,
       revealOrder,
       revealIndex: 0,
@@ -746,7 +755,8 @@ function App() {
   }, [autoSelectedPlayerIds.length, onlineRoom?.game?.resultRevealed, onlineRoom?.status, onlineRoomCode])
 
   function startGame() {
-    const nextPlayers = createLocalGame({ playerCount, impostorCount, category }).map((player, index) => ({
+    const roundCategory = resolveCategory(category)
+    const nextPlayers = createLocalGame({ playerCount, impostorCount, category: roundCategory }).map((player, index) => ({
       ...player,
       name: playerNames[index]?.trim() || `Jugador ${index + 1}`,
     }))
@@ -1283,6 +1293,13 @@ function App() {
         <div className="field">
           <span>Categoria</span>
           <div className="category-list">
+            <button
+              type="button"
+              className={category === RANDOM_CATEGORY ? 'category-pill random-pill active' : 'category-pill random-pill'}
+              onClick={() => setCategory(RANDOM_CATEGORY)}
+            >
+              🎲 Al azar
+            </button>
             {categories.map((item) => (
               <button
                 key={item}
@@ -1447,7 +1464,9 @@ function App() {
         <div className="player-badge">{currentIndex + 1}/{players.length}</div>
 
         <div
-          className="reveal-card"
+          key={currentPlayer.id}
+          className="reveal-card card-enter"
+          style={{ '--reveal': visualProgress }}
           onPointerDown={(event) => handleStartSwipe(event.clientY)}
           onPointerMove={(event) => handleMoveSwipe(event.clientY)}
           onPointerUp={finishSwipe}
@@ -1466,7 +1485,7 @@ function App() {
           </div>
 
           <div
-            className="reveal-cover"
+            className={isDragging ? 'reveal-cover dragging' : 'reveal-cover'}
             style={{
               transform: `translateY(${-visualProgress * 100}%)`,
             }}
@@ -1480,7 +1499,12 @@ function App() {
               <div className="swipe-meter">
                 <div className="swipe-meter-fill" style={{ height: `${visualProgress * 100}%` }} />
               </div>
-              <div className="swipe-hint">
+              {!isDragging && (
+                <div className={hasSeenRole ? 'swipe-arrow seen' : 'swipe-arrow'} aria-hidden="true">
+                  {hasSeenRole ? '✓' : '↑'}
+                </div>
+              )}
+              <div className={hasSeenRole ? 'swipe-hint seen' : 'swipe-hint'}>
                 <span>{statusLabel}</span>
                 <strong>{Math.round(visualProgress * 100)}%</strong>
               </div>
@@ -1488,8 +1512,13 @@ function App() {
           </div>
         </div>
 
-        <button type="button" className="primary-button" onClick={goToNextPlayer} disabled={!canContinue}>
-          {currentIndex === players.length - 1 ? 'Ir a votacion' : 'Continuar'}
+        <button
+          type="button"
+          className={canContinue ? 'primary-button ready' : 'primary-button'}
+          onClick={goToNextPlayer}
+          disabled={!canContinue}
+        >
+          {currentIndex === players.length - 1 ? 'Empezar partida' : 'Continuar'}
         </button>
 
         <button type="button" className="ghost-button" onClick={resetGame}>
@@ -1509,14 +1538,14 @@ function App() {
         <h2>La ronda esta activa</h2>
         <p className="intro">Hagan preguntas, acusen y esperen a que termine el tiempo para votar.</p>
 
-        <div className="timer-ring">
+        <div className={remainingSeconds <= URGENT_SECONDS ? 'timer-ring urgent' : 'timer-ring'}>
           <div className="timer-ring-fill" style={{ transform: `scaleY(${Math.max(progress, 0)})` }} />
           <strong>{formatTime(remainingSeconds)}</strong>
         </div>
 
         <div className="summary-box">
           <span>Categoria elegida</span>
-          <strong>{category}</strong>
+          <strong>{players[0]?.category ?? category}</strong>
         </div>
 
         <div className="summary-box">
@@ -1546,10 +1575,11 @@ function App() {
         </p>
 
         <div className="vote-list">
-          {players.map((player) => (
+          {players.map((player, index) => (
             <button
               key={player.id}
               type="button"
+              style={{ '--i': index }}
               className={votes.includes(player.id) ? 'vote-card selected' : 'vote-card'}
               onClick={() => toggleVote(player.id)}
             >
@@ -1603,9 +1633,11 @@ function App() {
           Compartir link de invitacion
         </button>
 
-        {status === ONLINE_STAGES.lobby && renderOnlineLobby()}
-        {status === ONLINE_STAGES.play && renderOnlinePlay()}
-        {status === ONLINE_STAGES.summary && renderOnlineSummary()}
+        <div key={status} className="stage-enter">
+          {status === ONLINE_STAGES.lobby && renderOnlineLobby()}
+          {status === ONLINE_STAGES.play && renderOnlinePlay()}
+          {status === ONLINE_STAGES.summary && renderOnlineSummary()}
+        </div>
 
         <button type="button" className="ghost-button" onClick={leaveOnlineRoom}>
           Salir de la sala
@@ -1624,8 +1656,8 @@ function App() {
         <div className="field">
           <span>Jugadores conectados</span>
           <div className="online-player-list">
-            {onlinePlayers.map((player) => (
-              <div key={player.id} className="online-player-card">
+            {onlinePlayers.map((player, index) => (
+              <div key={player.id} className="online-player-card" style={{ '--i': index }}>
                 <strong>{player.name}</strong>
                 <span>{player.id === onlineRoom?.hostId ? 'Anfitrion' : 'Listo'}</span>
               </div>
@@ -1692,6 +1724,18 @@ function App() {
         <div className="field">
           <span>Categoria</span>
           <div className="category-list">
+            <button
+              type="button"
+              className={
+                onlineConfig.category === RANDOM_CATEGORY
+                  ? 'category-pill random-pill active'
+                  : 'category-pill random-pill'
+              }
+              onClick={() => updateOnlineConfig({ category: RANDOM_CATEGORY })}
+              disabled={!isOnlineHost}
+            >
+              🎲 Al azar
+            </button>
             {categories.map((item) => (
               <button
                 key={item}
@@ -1734,7 +1778,7 @@ function App() {
 
         <div className="reveal-card online-role-card">
           <div className="reveal-content online-role-content">
-            <p className="card-label">Categoria: {myOnlinePlayer?.roundCategory ?? onlineConfig.category}</p>
+            <p className="card-label">Categoria: {myOnlinePlayer?.roundCategory ?? onlineRoom?.game?.category}</p>
             <p className="reveal-player-name">{myOnlinePlayer?.name ?? 'Jugador'}</p>
             <h2>{myRoleTitle}</h2>
             {myOnlinePlayer?.isImpostor ? (
@@ -1747,7 +1791,7 @@ function App() {
           </div>
         </div>
 
-        <div className="timer-ring">
+        <div className={onlineRemainingSeconds <= URGENT_SECONDS ? 'timer-ring urgent' : 'timer-ring'}>
           <div className="timer-ring-fill" style={{ transform: `scaleY(${progress})` }} />
           <strong>{formatTime(onlineRemainingSeconds)}</strong>
         </div>
@@ -1793,10 +1837,11 @@ function App() {
         </p>
 
         <div className="vote-list">
-          {onlinePlayers.map((player) => (
+          {onlinePlayers.map((player, index) => (
             <button
               key={player.id}
               type="button"
+              style={{ '--i': index }}
               className={
                 onlineVotes.includes(player.id) || autoSelectedPlayerIds.includes(player.id)
                   ? 'vote-card selected'

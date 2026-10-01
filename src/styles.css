@@ -222,7 +222,7 @@ h2 {
   width: 100%;
   padding: 16px 18px;
   font-weight: 700;
-  transition: transform 160ms ease, opacity 160ms ease;
+  transition: transform 180ms ease, opacity 180ms ease, box-shadow 180ms ease;
 }
 
 .inline-button {
@@ -298,7 +298,7 @@ h2 {
   background:
     linear-gradient(180deg, rgba(20, 40, 29, 0.96), rgba(18, 53, 46, 0.98)),
     #10211b;
-  transition: transform 180ms ease-out;
+  transition: transform 560ms cubic-bezier(0.34, 1.56, 0.64, 1);
   will-change: transform;
 }
 
@@ -306,7 +306,12 @@ h2 {
   position: absolute;
   inset: 0;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.36), transparent 50%);
-  transition: transform 120ms ease-out;
+  transition: transform 560ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.reveal-cover.dragging,
+.reveal-cover.dragging .reveal-shine {
+  transition: none;
 }
 
 .swipe-meter {
@@ -394,6 +399,7 @@ h2 {
   inset: 0;
   background: linear-gradient(180deg, rgba(223, 111, 47, 0.85), rgba(31, 92, 79, 0.85));
   transform-origin: bottom;
+  transition: transform 1s linear;
 }
 
 .timer-ring strong {
@@ -540,6 +546,253 @@ h2 {
 .turn-pill.active {
   background: #1f5c4f;
   color: #fffef6;
+}
+
+/* ---------- Animaciones ---------- */
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateX(60px) rotate(4deg) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes item-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes pop-in-centered {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+@keyframes bounce-up {
+  0%,
+  100% {
+    transform: translate(-50%, 0);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate(-50%, -14px);
+    opacity: 1;
+  }
+}
+
+@keyframes ready-pulse {
+  0%,
+  100% {
+    box-shadow: 0 16px 30px rgba(180, 75, 29, 0.25), 0 0 0 0 rgba(223, 111, 47, 0.45);
+  }
+  50% {
+    box-shadow: 0 16px 30px rgba(180, 75, 29, 0.25), 0 0 0 10px rgba(223, 111, 47, 0);
+  }
+}
+
+@keyframes urgent-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    border-color: rgba(255, 255, 255, 0.6);
+  }
+  50% {
+    transform: scale(1.04);
+    border-color: rgba(200, 50, 40, 0.55);
+  }
+}
+
+@keyframes orb-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(2.5rem, 1.5rem) scale(1.08);
+  }
+}
+
+@keyframes dice-wiggle {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-8deg);
+  }
+  75% {
+    transform: rotate(8deg);
+  }
+}
+
+.panel {
+  animation: panel-in 480ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.stage-enter {
+  display: grid;
+  gap: 6px;
+  animation: item-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.card-enter {
+  animation: card-in 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.orb-one {
+  animation: orb-drift 14s ease-in-out infinite;
+}
+
+.orb-two {
+  animation: orb-drift 18s ease-in-out infinite reverse;
+}
+
+/* El contenido escondido "sube" y aparece mientras deslizas */
+.reveal-content > * {
+  opacity: calc(0.25 + var(--reveal, 0) * 0.75);
+  transform: translateY(calc((1 - var(--reveal, 0)) * 28px)) scale(calc(0.94 + var(--reveal, 0) * 0.06));
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.swipe-arrow {
+  position: absolute;
+  left: 50%;
+  bottom: 84px;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  font-size: 1.6rem;
+  font-weight: 700;
+  animation: bounce-up 1.4s ease-in-out infinite;
+}
+
+.swipe-arrow.seen {
+  background: #f8ca78;
+  color: #14281d;
+  animation: pop-in-centered 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.swipe-hint.seen span {
+  color: #f8ca78;
+  font-weight: 700;
+}
+
+.primary-button.ready {
+  animation: ready-pulse 1.8s ease-in-out infinite;
+}
+
+.primary-button:not(:disabled):active,
+.ghost-button:active,
+.category-pill:not(:disabled):active,
+.stepper button:active,
+.vote-card:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+.category-pill {
+  transition: background-color 200ms ease, color 200ms ease, transform 180ms ease, box-shadow 200ms ease;
+}
+
+.category-pill.active {
+  box-shadow: 0 8px 18px rgba(217, 95, 39, 0.3);
+}
+
+.category-pill:disabled {
+  cursor: default;
+}
+
+.random-pill {
+  background: linear-gradient(135deg, rgba(248, 202, 120, 0.6), rgba(255, 255, 255, 0.75));
+}
+
+.random-pill.active {
+  background: linear-gradient(135deg, #df6f2f 0%, #1f5c4f 100%);
+  animation: dice-wiggle 500ms ease;
+}
+
+.vote-card,
+.online-player-card {
+  animation: item-in 380ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 50ms);
+  transition: background-color 220ms ease, color 220ms ease, transform 180ms ease;
+}
+
+.vote-card.selected {
+  transform: scale(1.02);
+  box-shadow: 0 10px 22px rgba(31, 92, 79, 0.25);
+}
+
+.result-box {
+  animation: pop-in 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.turn-pill {
+  transition: background-color 260ms ease, color 260ms ease, transform 260ms ease;
+}
+
+.turn-pill.active {
+  transform: scale(1.08);
+}
+
+.timer-ring.urgent {
+  animation: urgent-pulse 1s ease-in-out infinite;
+}
+
+.timer-ring.urgent .timer-ring-fill {
+  background: linear-gradient(180deg, rgba(220, 70, 50, 0.9), rgba(160, 40, 30, 0.9));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }
 
 @media (max-width: 640px) {
